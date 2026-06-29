@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>微醺狂欢 · 试玩</title>
+<style>
+  :root{--bg:#16131f;--card:#241d33;--card2:#2e2542;--gold:#e8b65a;--lime:#9fe07a;--pink:#e88ab0;--mut:#9a8fb0;--txt:#f2ecff;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:linear-gradient(160deg,#1a1426,#0f0c17);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.5}
+  .wrap{max-width:520px;margin:0 auto;padding:14px 12px 60px}
+  h1{font-size:20px;margin:6px 0;color:var(--gold);letter-spacing:1px}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:12px}
+  .bar{height:16px;background:#3a2f52;border-radius:9px;overflow:hidden;margin:6px 0}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--pink),var(--gold));transition:width .3s}
+  .panel{background:var(--card);border:1px solid #3a3052;border-radius:12px;padding:12px;margin:10px 0}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .card{background:var(--card2);border:1px solid #43365e;border-radius:10px;padding:10px;margin:6px 0;cursor:pointer;transition:.12s}
+  .card:active{transform:scale(.98)}
+  .card.sel{border-color:var(--gold);background:#3a2e1f;box-shadow:0 0 0 2px var(--gold) inset}
+  .card .nm{font-weight:700;font-size:15px}
+  .card .meta{color:var(--mut);font-size:12.5px;margin-top:2px}
+  .tag{display:inline-block;background:#43365e;border-radius:6px;padding:1px 7px;margin:2px 3px 0 0;font-size:12px;color:#d9c9ff}
+  .rare{color:var(--gold)} .uncommon{color:#7ec8ff}
+  .btn{display:block;width:100%;padding:13px;margin:7px 0;border:none;border-radius:11px;font-size:16px;font-weight:700;cursor:pointer;color:#1a1426;background:var(--gold)}
+  .btn.alt{background:#43365e;color:var(--txt)} .btn.lime{background:var(--lime)} .btn:active{opacity:.85}
+  .recipe{font-size:13px;margin:3px 0;color:var(--mut)}
+  .ok{color:var(--lime)} .no{color:#c98} .done{color:var(--gold);font-weight:700}
+  .big{font-size:26px;font-weight:800;color:var(--gold)}
+  .center{text-align:center}
+  .mini{font-size:12px;color:var(--mut)}
+  select,input{background:#2e2542;color:var(--txt);border:1px solid #43365e;border-radius:8px;padding:8px;font-size:15px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:8px;background:#3a2f52;font-size:12px;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+// ───────── 卡池(与模拟器一致) ─────────
+const SPIRITS=[
+ {id:"VOD",name:"伏特加",base:5,self:1.2,tags:["伏特加"]},
+ {id:"RUM",name:"朗姆",base:5,self:1.2,tags:["朗姆"]},
+ {id:"GIN",name:"金酒",base:5,self:1.2,tags:["金酒"]},
+ {id:"TEQ",name:"龙舌兰",base:6,self:1.25,tags:["龙舌兰"]},
+ {id:"WHI",name:"威士忌",base:6,self:1.3,tags:["威士忌"]}];
+const FLAVORS=[
+ ["橙汁",4,["橙汁","酸"]],["汤力水",3,["汤力","苦"]],["薄荷",2,["薄荷"]],["青柠",2,["青柠","酸"]],
+ ["盐",1,["盐"]],["糖浆",5,["甜"]],["苦精",2,["苦"]],["可乐",4,["可乐","甜"]],["苏打",3,["气泡"]],
+ ["蔓越莓汁",3,["蔓越莓","酸"]],["柠檬汁",3,["柠檬","酸"]],["姜汁",3,["姜"]],["椰浆",4,["椰","甜"]],
+ ["桃汁",4,["桃","甜"]],["葡萄汁",4,["葡萄","甜"]],["冰",3,["冰"]],
+ ["招牌糖浆",4,["甜","酸"],"稀有"],["安格仕苦精",3,["苦","甜"],"罕见"],
+ ["接骨木",4,["甜","柠檬"],"罕见"],["姜味啤酒",3,["姜","气泡"],"罕见"]
+].map(f=>({role:"辅料",name:f[0],base:f[1],tags:f[2],rarity:f[3]||"普通"}));
+const ACCS=[
+ ["小雨伞",1.5],["橄榄",1.3],["樱桃",1.4],["柠檬皮",1.3],["糖边",1.5],
+ ["金箔",1.6,"稀有"],["烟熏",1.5,"罕见"]
+].map(a=>({role:"配饰",name:a[0],mult:a[1],tags:[],rarity:a[2]||"普通"}));
+const EFFS=[
+ {name:"过牌",eff:"draw",n:2},{name:"续杯",eff:"draw",n:2},
+ {name:"甜味检索",eff:"tutor",n:1,tag:"甜"},{name:"酸味检索",eff:"tutor",n:1,tag:"酸"},
+ {name:"充分摇晃",eff:"buff",x:0.5},{name:"Mixer",eff:"mixer",choices:["橙汁","蔓越莓"],pen:0.7},
+ {name:"点单(改轮盘)",eff:"rot",to:"VOD",turns:3},{name:"对饮(双减)",eff:"dual",delay:2},
+ {name:"狂饮(过牌3)",eff:"draw",n:3,rarity:"稀有"},{name:"花式调酒",eff:"buff",x:0.5,rarity:"稀有"}
+].map(e=>({role:"效果",rarity:e.rarity||"普通",...e}));
+const RECIPES=[
+ ["螺丝起子","VOD",["橙汁"]],["莫斯科骡子","VOD",["姜","青柠"]],["大都会","VOD",["蔓越莓","青柠"]],
+ ["海风","VOD",["蔓越莓","柠檬"]],["伏特加汤力","VOD",["汤力"]],
+ ["莫吉托","RUM",["薄荷","青柠"]],["自由古巴","RUM",["可乐","青柠"]],["黛绮莉","RUM",["青柠","甜"]],
+ ["椰林飘香","RUM",["椰","桃"]],["金汤力","GIN",["汤力"]],["金菲士","GIN",["柠檬","甜","气泡"]],
+ ["内格罗尼","GIN",["苦","甜"]],["玛格丽特","TEQ",["青柠","盐"]],["龙舌兰日出","TEQ",["橙汁","蔓越莓"]],
+ ["帕洛玛","TEQ",["柠檬","气泡"]],["古典","WHI",["苦","甜"]],["威士忌酸","WHI",["柠檬","甜"]]
+].map(r=>({id:r[0],spirit:r[1],req:r[2]}));
+const RAR_W={"普通":60,"罕见":30,"稀有":10};
+const LADDER={1:450,2:540,3:680,4:900,5:1100,6:1350};
+const BASE_SCALE=0.3, RECIPE_MULT=7, R=18, X=14, HAND=5;
+
+// ───────── 工具 ─────────
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let RNG=mulberry32(1);
+const rint=n=>Math.floor(RNG()*n);
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rint(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+function sample(arr,k){const c=arr.slice();shuffle(c);return c.slice(0,k);}
+function wrar(){let r=RNG()*100,u=0;for(const t in RAR_W){u+=RAR_W[t];if(r<=u)return t;}return"普通";}
+function recipesUsing(tag){return RECIPES.filter(r=>r.req.includes(tag)).map(r=>r.id);}
+function rarCls(c){return c.rarity==="稀有"?"rare":c.rarity==="罕见"?"uncommon":"";}
+
+function describe(c){
+  if(c.role==="辅料"){const rs=[...new Set(c.tags.flatMap(recipesUsing))];
+    return `<div class="nm ${rarCls(c)}">🧉 ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""}</div>
+    <div class="meta">基础分 ${c.base} · ${c.tags.map(t=>'<span class="tag">'+t+'</span>').join("")}</div>
+    <div class="meta">↳ 可凑：${rs.length?rs.slice(0,4).join("、")+(rs.length>4?"…":""):"无配方(只给基础分)"}</div>`;}
+  if(c.role==="配饰")return `<div class="nm ${rarCls(c)}">🍒 ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""}</div>
+    <div class="meta">成配方时整杯 ×${c.mult}（独立乘区，同种每杯一次）</div>`;
+  const d={draw:`抽牌：立刻多摸 ${c.n} 张（自动）`,tutor:`检索：找一张带[${c.tag}]味的牌（自动）`,
+    buff:`摇晃：下一杯若≥3配料，整杯 +${c.x*100|0}%（手动打出）`,
+    mixer:`Mixer：变成 ${(c.choices||[]).join("/")} 之一进杯，但该杯配方×${c.pen}`,
+    rot:`改轮盘：接下来${c.turns}回合基酒变某基酒（自动）`,dual:`对饮：Boss延后${c.delay}回合（自动）`}[c.eff];
+  return `<div class="nm ${rarCls(c)}">✨ ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""}</div><div class="meta">${d}</div>`;
+}
+
+// ───────── 计分(与engine一致) ─────────
+function matchedRecipe(spirit,cup){
+  const have=new Set([...spirit.tags,...cup.flatMap(c=>c.tags||[])]);
+  let best=null;
+  for(const r of RECIPES) if(r.spirit===spirit.id && r.req.every(t=>have.has(t)))
+    if(!best||r.req.length>best.req.length) best=r;
+  return best;
+}
+function cupScore(spirit,cup,pendingBuff,penalty){
+  const flav=cup.filter(c=>c.role==="辅料");
+  const base=(spirit.base+flav.reduce((s,c)=>s+c.base,0))*BASE_SCALE;
+  const r=matchedRecipe(spirit,cup);
+  if(!r) return {score:base,aligned:false,recipe:null};
+  const req=new Set(r.req), n=r.req.length;
+  const rare=flav.filter(c=>(c.rarity==="罕见"||c.rarity==="稀有")&&c.tags.some(t=>req.has(t))).length;
+  let mult=spirit.self*RECIPE_MULT*(1+0.7*(n-1))*(1+0.6*rare)*penalty;
+  const seen=new Set();
+  for(const c of cup) if(c.role==="配饰"&&!seen.has(c.name)){seen.add(c.name);mult*=c.mult;}
+  if(pendingBuff&&flav.length>=3) mult*=(1+pendingBuff);
+  return {score:base*mult,aligned:true,recipe:r.id};
+}
+
+// ───────── 状态 ─────────
+let S={};
+function start(diff,seed){
+  RNG=mulberry32(40000+seed);
+  S={phase:"draft",diff,seed,target:LADDER[diff],round:1,
+     deck:FLAVORS.slice(0,5).map(c=>({...c})),offer:null,
+     // battle填充
+  };
+  genOffer(); render();
+}
+function genOffer(){
+  const tier=wrar();
+  const pool=[...FLAVORS,...ACCS,...EFFS].filter(c=>c.rarity===tier);
+  S.offer={tier,cards:sample(pool,Math.min(3,pool.length)).map(c=>({...c}))};
+}
+function pick(i){
+  if(i>=0) S.deck.push({...S.offer.cards[i]});
+  S.round++;
+  if(S.round>R){beginBattle();return;}
+  genOffer(); render();
+}
+
+// 战斗
+function beginBattle(){
+  RNG=mulberry32(S.seed);
+  S.phase="battle"; S.turn=1; S.revelry=0; S.cup=[]; S.penalty=1; S.buff=0;
+  S.rotMap={}; S.bossDelay=0;
+  S.draw=shuffle(S.deck.map(c=>({...c}))); S.discard=[];
+  startTurn();
+}
+function drawN(n){const out=[];for(let k=0;k<n;k++){if(!S.draw.length){if(!S.discard.length)break;S.draw=shuffle(S.discard);S.discard=[];}out.push(S.draw.pop());}return out;}
+function effSpirit(t){const f=S.rotMap[t];if(f)return SPIRITS.find(s=>s.id===f)||SPIRITS[(t-1)%5];return SPIRITS[(t-1)%5];}
+function startTurn(){
+  let hand=drawN(HAND), rest=[], log=[];
+  for(const c of hand){
+    if(c.role==="效果"){
+      if(c.eff==="draw"){rest.push(...drawN(c.n));log.push(`过牌+${c.n}`);}
+      else if(c.eff==="tutor"){const idx=S.draw.findIndex(x=>x.tags&&x.tags.includes(c.tag));if(idx>=0){rest.push(S.draw.splice(idx,1)[0]);}rest.push(...drawN(c.n-1>0?c.n-1:0));log.push(`检索${c.tag}`);}
+      else if(c.eff==="rot"){for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=c.to;log.push(`改轮盘→${c.turns}回合`);}
+      else if(c.eff==="dual"){S.bossDelay+=c.delay;log.push(`Boss延后${c.delay}`);}
+      else rest.push(c); // mixer/buff 手动
+      S.discard.push(c);
+    } else rest.push(c);
+  }
+  S.hand=rest; S.sel=new Set(); S.autolog=log; S.spirit=effSpirit(S.turn);
+  render();
+}
+function toggle(i){if(S.sel.has(i))S.sel.delete(i);else S.sel.add(i);render();}
+function curAdds(){return [...S.sel].map(i=>S.hand[i]);}
+function previewFlavors(){
+  const fl=[]; let pen=S.penalty, buff=S.buff;
+  for(const c of curAdds()){
+    if(c.role==="效果"&&c.eff==="mixer"){fl.push({role:"辅料",base:2,tags:[c.choices[0]],name:"Mixer"});pen*=c.pen;}
+    else if(c.role==="效果"&&c.eff==="buff"){buff=c.x;}
+    else fl.push(c);
+  }
+  return {flavors:[...S.cup,...fl],pen,buff};
+}
+function doServeOrKeep(serve){
+  // 应用所选卡
+  for(const c of curAdds()){
+    if(c.role==="效果"&&c.eff==="mixer"){
+      const ch=c.choices[Math.min(1,Math.max(0,prompt("Mixer 变成？输入 0="+c.choices[0]+" 或 1="+c.choices[1],"0")|0))];
+      S.cup.push({role:"辅料",base:2,tags:[ch],name:"Mixer→"+ch}); S.penalty*=c.pen;
+    } else if(c.role==="效果"&&c.eff==="buff"){ S.buff=c.x; }
+    else S.cup.push(c);
+    S.discard.push(c);
+  }
+  // 未打出的手牌进弃牌
+  for(let i=0;i<S.hand.length;i++) if(!S.sel.has(i)) S.discard.push(S.hand[i]);
+  if(serve){
+    const r=cupScore(S.spirit,S.cup,S.buff,S.penalty);
+    S.revelry+=r.score; S.cup=[]; S.penalty=1; S.buff=0;
+  }
+  if(S.revelry>=S.target){S.phase="result";S.win=S.turn<=(X+S.bossDelay);S.toTurn=S.turn;render();return;}
+  S.turn++;
+  if(S.turn>X){S.phase="result";S.win=false;S.toTurn=null;render();return;}
+  startTurn();
+}
+
+// ───────── 渲染 ─────────
+const app=document.getElementById("app");
+function render(){
+  if(S.phase==="setup"||!S.phase) return renderSetup();
+  if(S.phase==="draft") return renderDraft();
+  if(S.phase==="battle") return renderBattle();
+  if(S.phase==="result") return renderResult();
+}
+function renderSetup(){
+  app.innerHTML=`<h1>微醺狂欢 · 试玩</h1>
+  <div class="sub">选卡(3选1×18) → 战斗(轮盘/入杯/上酒) → 在14回合内把狂欢值累计到难度线，抢在 Boss 前。</div>
+  <div class="panel">
+   <div>难度 <select id="diff">${[1,2,3,4,5,6].map(d=>`<option value="${d}" ${d===3?"selected":""}>难${d}（线 ${LADDER[d]}）</option>`).join("")}</select>
+   <span class="pill">越高线越高，只有近最优过</span></div>
+   <div style="margin-top:10px">种子 <input id="seed" type="number" value="${Math.floor(Math.random()*9999)}" style="width:100px"></div>
+   <button class="btn" onclick="start(+diff.value,+seed.value)">开始</button>
+  </div>
+  <div class="mini">计分：成『配方』(基酒+指定味道)→整杯×大乘区(最值钱)；没成→只有基酒分+辅料分小加法。配饰=额外乘区。</div>`;
+}
+function renderDraft(){
+  const o=S.offer;
+  app.innerHTML=`<h1>选卡 ${S.round}/${R} <span class="pill">本轮稀有度 ${o.tier}</span></h1>
+  <div class="sub">凑能反复成配方的牌组。当前牌组 ${S.deck.length} 张。</div>
+  ${o.cards.map((c,i)=>`<div class="card" onclick="pick(${i})">${describe(c)}</div>`).join("")}
+  <button class="btn alt" onclick="pick(-1)">跳过本轮（保持精简）</button>
+  <div class="panel mini"><b>当前牌组：</b>${S.deck.map(c=>c.name).join("、")}</div>`;
+}
+function renderBattle(){
+  const sp=S.spirit, nxt=[1,2,3].map(k=>effSpirit(S.turn+k).name);
+  const have=new Set([...sp.tags,...S.cup.flatMap(c=>c.tags||[])]);
+  const recs=RECIPES.filter(r=>r.spirit===sp.id).map(r=>{
+    const done=r.req.every(t=>have.has(t));
+    return `<div class="recipe">${done?'<span class="done">★成! </span>':''}${r.id}：${r.req.map(t=>have.has(t)?'<span class="ok">✓'+t+'</span>':'<span class="no">✗'+t+'</span>').join(" ")}</div>`;}).join("");
+  const cupNow=cupScore(sp,S.cup,S.buff,S.penalty);
+  const pv=previewFlavors(); const pvr=cupScore(sp,pv.flavors,pv.buff,pv.pen);
+  const pct=Math.min(100,S.revelry/S.target*100);
+  app.innerHTML=`<h1>第 ${S.turn}/${X} 回合</h1>
+  <div class="bar"><i style="width:${pct}%"></i></div>
+  <div class="sub">狂欢值 <b class="big" style="font-size:18px">${Math.round(S.revelry)}</b> / ${S.target}　${S.autolog.length?'<span class="pill">'+S.autolog.join(" ")+'</span>':''}</div>
+  <div class="panel">
+   <div>🎡 这杯基酒 <b style="color:var(--gold)">${sp.name}</b>（基础分${sp.base}）<span class="mini">　接下来：${nxt.join(" → ")}</span></div>
+   <div style="margin-top:6px">📖 配方进度：</div>${recs}
+   <div style="margin-top:6px">🥃 杯中：${S.cup.length?S.cup.map(c=>c.name).join("、")+` → 现在上酒 <b>${Math.round(cupNow.score)}</b>分${cupNow.aligned?'（成'+cupNow.recipe+'!）':'（未成方）'}`:"空"}</div>
+  </div>
+  <div class="sub">✋ 手牌（点选要入杯的）：</div>
+  ${S.hand.map((c,i)=>`<div class="card ${S.sel.has(i)?'sel':''}" onclick="toggle(${i})">${describe(c)}</div>`).join("")}
+  <div class="panel center">若上酒：这杯 <b class="big" style="font-size:20px">${Math.round(pvr.score)}</b> 分 ${pvr.aligned?'<span class="done">★成'+pvr.recipe+'!</span>':'<span class="mini">(未成方)</span>'}<br>
+   <span class="mini">累计将到 ${Math.round(S.revelry+pvr.score)} / ${S.target}</span></div>
+  <button class="btn lime" onclick="doServeOrKeep(true)">🍸 上酒结算</button>
+  <button class="btn alt" onclick="doServeOrKeep(false)">留杯（跨回合攒大杯）</button>`;
+}
+function renderResult(){
+  app.innerHTML=`<h1>结算</h1>
+  <div class="panel center">
+   <div class="big">${Math.round(S.revelry)}</div><div class="mini">最终狂欢值 / 难度线 ${S.target}</div>
+   <div style="margin:12px 0;font-size:20px">${S.toTurn?(S.win?'🏆 第'+S.toTurn+'回合到线，胜！':'第'+S.toTurn+'回合到线，惜败'):'✗ 14回合内未到线，败'}</div>
+   <div class="mini">对照量产分布(14回合)：地板≈535 / 上界≈1196；你这局 ${Math.round(S.revelry)}</div>
+  </div>
+  <button class="btn" onclick="S.phase='setup';render()">再来一局</button>
+  <div class="mini">验证：计分/配方/轮盘手感对吗？分落在分布哪？难度线合理吗？</div>`;
+}
+S.phase="setup"; render();
+</script>
+</body>
+</html>
