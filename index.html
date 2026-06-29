@@ -50,25 +50,25 @@ const FLAVORS=[
  ["桃汁",4,["桃","甜"]],["葡萄汁",4,["葡萄","甜"]],["冰",3,["冰"]],
  ["招牌糖浆",4,["甜","酸"],"稀有"],["安格仕苦精",3,["苦","甜"],"罕见"],
  ["接骨木",4,["甜","柠檬"],"罕见"],["姜味啤酒",3,["姜","气泡"],"罕见"]
-].map(f=>({role:"辅料",name:f[0],base:f[1],tags:f[2],rarity:f[3]||"普通"}));
+].map(f=>({role:"辅料",name:f[0],base:f[1],tags:f[2],rarity:f[3]||"普通",occ:1}));
 const ACCS=[
  ["小雨伞",1.5],["橄榄",1.3],["樱桃",1.4],["柠檬皮",1.3],["糖边",1.5],
  ["金箔",1.6,"稀有"],["烟熏",1.5,"罕见"]
-].map(a=>({role:"配饰",name:a[0],mult:a[1],tags:[],rarity:a[2]||"普通"}));
+].map(a=>({role:"配饰",name:a[0],mult:a[1],tags:[],rarity:a[2]||"普通",occ:0}));
 const EFFS=[
  {name:"过牌",eff:"draw",n:2},{name:"续杯",eff:"draw",n:2},
  {name:"甜味检索",eff:"tutor",n:1,tag:"甜"},{name:"酸味检索",eff:"tutor",n:1,tag:"酸"},
  {name:"充分摇晃",eff:"buff",x:0.5},{name:"Mixer",eff:"mixer",choices:["橙汁","蔓越莓"],pen:0.7},
  {name:"点单(改轮盘)",eff:"rot",to:"VOD",turns:3},{name:"对饮(双减)",eff:"dual",delay:2},
  {name:"狂饮(过牌3)",eff:"draw",n:3,rarity:"稀有"},{name:"花式调酒",eff:"buff",x:0.5,rarity:"稀有"}
-].map(e=>({role:"效果",rarity:e.rarity||"普通",...e}));
+].map(e=>({role:"效果",rarity:e.rarity||"普通",occ:0,...e}));
 const RECIPES=[
  ["螺丝起子","VOD",["橙汁"]],["莫斯科骡子","VOD",["姜","青柠"]],["大都会","VOD",["蔓越莓","青柠"]],
  ["海风","VOD",["蔓越莓","柠檬"]],["伏特加汤力","VOD",["汤力"]],
  ["莫吉托","RUM",["薄荷","青柠"]],["自由古巴","RUM",["可乐","青柠"]],["黛绮莉","RUM",["青柠","甜"]],
- ["椰林飘香","RUM",["椰","桃"]],["金汤力","GIN",["汤力"]],["金菲士","GIN",["柠檬","甜","气泡"]],
+ ["椰林飘香","RUM",["椰","桃"]],["金汤力","GIN",["汤力"]],
  ["内格罗尼","GIN",["苦","甜"]],["玛格丽特","TEQ",["青柠","盐"]],["龙舌兰日出","TEQ",["橙汁","蔓越莓"]],
- ["帕洛玛","TEQ",["柠檬","气泡"]],["古典","WHI",["苦","甜"]],["威士忌酸","WHI",["柠檬","甜"]]
+ ["古典","WHI",["苦","甜"]],["威士忌酸","WHI",["柠檬","甜"]]
 ].map(r=>({id:r[0],spirit:r[1],req:r[2]}));
 const RAR_W={"普通":60,"罕见":30,"稀有":10};
 const LADDER={1:450,2:540,3:680,4:900,5:1100,6:1350};
@@ -86,11 +86,11 @@ function rarCls(c){return c.rarity==="稀有"?"rare":c.rarity==="罕见"?"uncomm
 
 function describe(c){
   if(c.role==="辅料"){const rs=[...new Set(c.tags.flatMap(recipesUsing))];
-    return `<div class="nm ${rarCls(c)}">🧉 ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""}</div>
+    return `<div class="nm ${rarCls(c)}">🧉 ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""} <span class="mini">占位${c.occ}</span></div>
     <div class="meta">基础分 ${c.base} · ${c.tags.map(t=>'<span class="tag">'+t+'</span>').join("")}</div>
     <div class="meta">↳ 可凑：${rs.length?rs.slice(0,4).join("、")+(rs.length>4?"…":""):"无配方(只给基础分)"}</div>`;}
-  if(c.role==="配饰")return `<div class="nm ${rarCls(c)}">🍒 ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""}</div>
-    <div class="meta">成配方时整杯 ×${c.mult}（独立乘区，同种每杯一次）</div>`;
+  if(c.role==="配饰")return `<div class="nm ${rarCls(c)}">🍒 ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""} <span class="mini">装饰·占位0·不可重复</span></div>
+    <div class="meta">成配方时整杯 ×${c.mult}（独立乘区，不占杯空间，同种每杯一次）</div>`;
   const d={draw:`抽牌：立刻多摸 ${c.n} 张（自动）`,tutor:`检索：找一张带[${c.tag}]味的牌（自动）`,
     buff:`摇晃：下一杯若≥3配料，整杯 +${c.x*100|0}%（手动打出）`,
     mixer:`Mixer：变成 ${(c.choices||[]).join("/")} 之一进杯，但该杯配方×${c.pen}`,
@@ -178,7 +178,8 @@ function previewFlavors(){
   }
   return {flavors:[...S.cup,...fl],pen,buff};
 }
-const FLAV_CAP=3, CUP_CAP=4;          // 杯容量:辅料≤3,共≤4
+const CAP=4;                          // 杯总占位上限(基酒占1 + 各料占位)，即最多3份配料；装饰占0
+function cupOcc(){return 1 + S.cup.reduce((s,c)=>s+(c.occ||0),0);}  // 基酒占1
 function mixerChoice(c){
   const have=new Set([...S.spirit.tags,...S.cup.flatMap(x=>x.tags||[])]);
   const need=new Set();
@@ -191,17 +192,16 @@ function playSelected(){
   const msg=[], played=new Set();
   for(const i of [...S.sel].sort((a,b)=>a-b)){
     const c=S.hand[i];
-    const flav=S.cup.filter(x=>x.role==="辅料").length, total=S.cup.length;
     if(c.role==="辅料"){
-      if(flav>=FLAV_CAP){msg.push(`✗ ${c.name}：辅料已满(${FLAV_CAP})`);continue;}
+      const occ=c.occ||1;
+      if(cupOcc()+occ>CAP){msg.push(`✗ ${c.name}：杯占位已满(${CAP})`);continue;}
       S.cup.push(c);played.add(i);msg.push(`+${c.name}`);
     }else if(c.role==="配饰"){
       if(S.cup.some(x=>x.role==="配饰"&&x.name===c.name)){msg.push(`⚠ ${c.name} 重复·无效(同种每杯一次)`);played.add(i);continue;}
-      if(total>=CUP_CAP){msg.push(`✗ 杯子已满(${CUP_CAP})`);continue;}
-      S.cup.push(c);played.add(i);msg.push(`+${c.name}(配饰×${c.mult})`);
+      S.cup.push(c);played.add(i);msg.push(`+${c.name}(装饰×${c.mult}·不占位)`);
     }else if(c.eff==="mixer"){
-      if(flav>=FLAV_CAP){msg.push(`✗ Mixer：辅料已满`);continue;}
-      const ch=mixerChoice(c);S.cup.push({role:"辅料",base:2,tags:[ch],name:"Mixer→"+ch});S.penalty*=c.pen;played.add(i);msg.push(`+Mixer→${ch}(本杯配方×${c.pen})`);
+      if(cupOcc()+1>CAP){msg.push(`✗ Mixer：杯占位已满`);continue;}
+      const ch=mixerChoice(c);S.cup.push({role:"辅料",occ:1,base:2,tags:[ch],name:"Mixer→"+ch});S.penalty*=c.pen;played.add(i);msg.push(`+Mixer→${ch}(本杯配方×${c.pen})`);
     }else if(c.eff==="buff"){S.buff=c.x;played.add(i);msg.push(`🫨摇晃就绪(下次上酒满3料 +${c.x*100|0}%)`);}
   }
   for(const i of played) S.discard.push(S.hand[i]);
@@ -283,7 +283,6 @@ function renderBattle(){
   const recs=RECIPES.filter(r=>r.spirit===sp.id).map(r=>{
     const done=r.req.every(t=>have.has(t));
     return `<div class="recipe">${done?'<span class="done">★成! </span>':''}${r.id}：${r.req.map(t=>have.has(t)?'<span class="ok">✓'+t+'</span>':'<span class="no">✗'+t+'</span>').join(" ")}</div>`;}).join("");
-  const flav=S.cup.filter(c=>c.role==="辅料").length;
   const cupNow=cupScore(sp,S.cup,S.buff,S.penalty);
   const pct=Math.min(100,S.revelry/S.target*100);
   app.innerHTML=`<h1>第 ${S.turn}/${X} 回合</h1>
@@ -293,7 +292,7 @@ function renderBattle(){
   <div class="panel">
    <div>🎡 基酒 <b style="color:var(--gold)">${sp.name}</b>(${sp.base})　<span class="mini">接下来 ${nxt.join("→")}</span></div>
    <div style="margin-top:4px">📖 配方（✓=杯中已有该味）：</div>${recs}
-   <div style="margin-top:6px">🥃 杯中 <span class="mini">(辅料${flav}/${FLAV_CAP}，共${S.cup.length}/${CUP_CAP})</span>：${S.cup.length?S.cup.map(c=>c.name).join("、")+` → 上酒得 <b>${Math.round(cupNow.score)}</b>${cupNow.aligned?'(成'+cupNow.recipe+')':'(未成方)'}`:"空"}${S.buff?' <span class="pill">🫨摇晃待发</span>':""}</div>
+   <div style="margin-top:6px">🥃 杯中 <span class="mini">(占位 ${cupOcc()}/${CAP}，含基酒1)</span>：${S.cup.length?S.cup.map(c=>c.name+(c.role==="配饰"?"·装饰":"")).join("、")+` → 上酒得 <b>${Math.round(cupNow.score)}</b>${cupNow.aligned?'(成'+cupNow.recipe+')':'(未成方)'}`:"空"}${S.buff?' <span class="pill">🫨摇晃待发</span>':""}</div>
   </div>
   <div class="sub">✋ 手牌（点选 → 打出入杯）：</div>
   ${S.hand.length?S.hand.map((c,i)=>`<div class="card ${S.sel.has(i)?'sel':''}" onclick="toggle(${i})">${describe(c)}</div>`).join(""):'<div class="mini">手牌已空</div>'}
