@@ -146,7 +146,7 @@ function pick(i){
 function beginBattle(){
   RNG=mulberry32(S.seed);
   S.phase="battle"; S.turn=1; S.revelry=0; S.cup=[]; S.penalty=1; S.buff=0;
-  S.rotMap={}; S.bossDelay=0;
+  S.rotMap={}; S.bossDelay=0; S.serves=[]; S.saved=false;
   S.draw=shuffle(S.deck.map(c=>({...c}))); S.discard=[];
   startTurn();
 }
@@ -192,13 +192,37 @@ function doServeOrKeep(serve){
   for(let i=0;i<S.hand.length;i++) if(!S.sel.has(i)) S.discard.push(S.hand[i]);
   if(serve){
     const r=cupScore(S.spirit,S.cup,S.buff,S.penalty);
+    S.serves.push({turn:S.turn,spirit:S.spirit.name,recipe:r.recipe||"-",score:Math.round(r.score)});
     S.revelry+=r.score; S.cup=[]; S.penalty=1; S.buff=0;
   }
-  if(S.revelry>=S.target){S.phase="result";S.win=S.turn<=(X+S.bossDelay);S.toTurn=S.turn;render();return;}
+  if(S.revelry>=S.target){S.phase="result";S.win=S.turn<=(X+S.bossDelay);S.toTurn=S.turn;saveRun();render();return;}
   S.turn++;
-  if(S.turn>X){S.phase="result";S.win=false;S.toTurn=null;render();return;}
+  if(S.turn>X){S.phase="result";S.win=false;S.toTurn=null;saveRun();render();return;}
   startTurn();
 }
+
+// ───────── 数据记录 ─────────
+function saveRun(){
+  if(S.saved) return; S.saved=true;
+  const rec={ts:new Date().toISOString(),seed:S.seed,diff:S.diff,target:S.target,
+    revelry:Math.round(S.revelry),win:S.win?1:0,toTurn:S.toTurn||"",deckSize:S.deck.length,
+    deck:S.deck.map(c=>c.name).join("|"),
+    serves:S.serves.map(s=>`${s.turn}@${s.spirit}:${s.recipe}=${s.score}`).join(" ")};
+  const all=JSON.parse(localStorage.getItem("wx_runs")||"[]"); all.push(rec);
+  localStorage.setItem("wx_runs",JSON.stringify(all));
+}
+function runCount(){return JSON.parse(localStorage.getItem("wx_runs")||"[]").length;}
+function exportCSV(){
+  const all=JSON.parse(localStorage.getItem("wx_runs")||"[]");
+  if(!all.length){alert("还没有记录");return;}
+  const cols=["ts","seed","diff","target","revelry","win","toTurn","deckSize","deck","serves"];
+  let csv=cols.join(",")+"\n";
+  for(const r of all) csv+=cols.map(k=>`"${String(r[k]??"").replace(/"/g,'""')}"`).join(",")+"\n";
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download="weixun_runs.csv"; a.click();
+}
+function clearRuns(){ if(confirm("清空所有本地记录?")){localStorage.removeItem("wx_runs");render();} }
 
 // ───────── 渲染 ─────────
 const app=document.getElementById("app");
@@ -258,8 +282,15 @@ function renderResult(){
    <div style="margin:12px 0;font-size:20px">${S.toTurn?(S.win?'🏆 第'+S.toTurn+'回合到线，胜！':'第'+S.toTurn+'回合到线，惜败'):'✗ 14回合内未到线，败'}</div>
    <div class="mini">对照量产分布(14回合)：地板≈535 / 上界≈1196；你这局 ${Math.round(S.revelry)}</div>
   </div>
-  <button class="btn" onclick="S.phase='setup';render()">再来一局</button>
-  <div class="mini">验证：计分/配方/轮盘手感对吗？分落在分布哪？难度线合理吗？</div>`;
+  <div class="panel mini"><b>本局每杯：</b>${S.serves.length?S.serves.map(s=>`第${s.turn}回合 ${s.spirit}·${s.recipe} <b>${s.score}</b>`).join("　/　"):"未上酒"}<br><b>牌组：</b>${S.deck.map(c=>c.name).join("、")}</div>
+  <button class="btn lime" onclick="start(${S.diff},${S.seed})">🔁 重打同种子(${S.seed})</button>
+  <button class="btn" onclick="S.phase='setup';render()">再来一局(换种子/难度)</button>
+  <div class="panel">
+   <div class="mini">已记录 <b>${runCount()}</b> 局（存在本机浏览器）</div>
+   <button class="btn alt" onclick="exportCSV()">⬇ 导出全部数据 CSV</button>
+   <button class="btn alt" onclick="clearRuns()">清空记录</button>
+  </div>
+  <div class="mini">验证：计分/配方/轮盘手感对吗？分落在分布哪？难度线合理吗？CSV 拿给我做针对性调整。</div>`;
 }
 S.phase="setup"; render();
 </script>
