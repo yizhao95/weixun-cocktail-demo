@@ -101,7 +101,7 @@ function describe(c){
   const d={draw:`抽牌：立刻多摸 ${c.n} 张（自动）`,tutor:`检索：找一张带[${c.tag}]味的牌（自动）`,
     buff:`摇晃：下一杯若≥3配料，整杯 +${c.x*100|0}%（手动打出）`,
     mixer:`Mixer：变成 ${(c.choices||[]).join("/")} 之一进杯，但该杯配方×${c.pen}`,
-    rot:`点单：接下来 ${c.turns} 回合基酒变【${(SPIRITS.find(s=>s.id===c.to)||{}).name}】（摸到自动生效）`,
+    rot:`点单：接下来 ${c.turns} 回合基酒变【${(SPIRITS.find(s=>s.id===c.to)||{}).name}】（手动打出，选好时机）`,
     lock:`续单：接下来 ${c.turns} 回合都是本回合的基酒（手动打出，选好时机）`,
     dual:`对饮：Boss延后${c.delay}回合（自动）`}[c.eff];
   return `<div class="nm ${rarCls(c)}">✨ ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""}</div><div class="meta">${d}</div>`;
@@ -166,13 +166,12 @@ function startTurn(){
   let queue=drawN(HAND), rest=[], log=[];
   while(queue.length){
     const c=queue.shift();
-    if(c.role==="效果"&&["draw","tutor","rot","dual"].includes(c.eff)){
+    if(c.role==="效果"&&["draw","tutor","dual"].includes(c.eff)){
       if(c.eff==="draw"){queue.push(...drawN(c.n));log.push(`过牌+${c.n}`);}
       else if(c.eff==="tutor"){const idx=S.draw.findIndex(x=>x.tags&&x.tags.includes(c.tag));if(idx>=0){queue.push(S.draw.splice(idx,1)[0]);log.push(`检索→拿到${c.tag}`);}else log.push(`检索${c.tag}:牌库没有`);}
-      else if(c.eff==="rot"){for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=c.to;log.push(`点单:下${c.turns}回合→${(SPIRITS.find(s=>s.id===c.to)||{}).name}`);}
       else if(c.eff==="dual"){S.bossDelay+=c.delay;log.push(`Boss延后${c.delay}`);}
       S.discard.push(c);
-    } else rest.push(c); // 辅料/配饰/mixer/buff/lock 留在手里
+    } else rest.push(c); // 辅料/配饰/mixer/buff/rot/lock 留在手里(改轮盘类一律手动)
   }
   S.hand=rest; S.sel=new Set(); S.autolog=log; S.spirit=effSpirit(S.turn); S.feedback=""; S.wheelSel=null; S.served=false;
   render();
@@ -217,6 +216,10 @@ function playSelected(){
     else if(c.eff==="lock"){
       for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=S.spirit.id;
       played.add(i);toDiscard.push(c);msg.push(`📌续单：第${S.turn+1}~${S.turn+c.turns}回合锁定【${S.spirit.name}】`);
+    }else if(c.eff==="rot"){
+      const to=(SPIRITS.find(s=>s.id===c.to)||{}).name;
+      for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=c.to;
+      played.add(i);toDiscard.push(c);msg.push(`📌点单：第${S.turn+1}${c.turns>1?"~"+(S.turn+c.turns):""}回合变【${to}】`);
     }
   }
   for(const c of toDiscard) S.discard.push(c);
