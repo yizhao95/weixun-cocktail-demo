@@ -43,13 +43,14 @@ const SPIRITS=[
  {id:"GIN",name:"金酒",base:5,self:1.2,tags:["金酒"]},
  {id:"TEQ",name:"龙舌兰",base:6,self:1.25,tags:["龙舌兰"]},
  {id:"WHI",name:"威士忌",base:6,self:1.3,tags:["威士忌"]}];
+// 气泡系(汤力水/可乐/苏打/姜味啤酒)已移出→留给气泡水(Highball)流派
 const FLAVORS=[
- ["橙汁",4,["橙汁","酸"]],["汤力水",3,["汤力","苦"]],["薄荷",2,["薄荷"]],["青柠",2,["青柠","酸"]],
- ["盐",1,["盐"]],["糖浆",5,["甜"]],["苦精",2,["苦"]],["可乐",4,["可乐","甜"]],["苏打",3,["气泡"]],
+ ["橙汁",4,["橙汁","酸"]],["薄荷",2,["薄荷"]],["青柠",2,["青柠","酸"]],
+ ["盐",1,["盐"]],["糖浆",5,["甜"]],["苦精",2,["苦"]],
  ["蔓越莓汁",3,["蔓越莓","酸"]],["柠檬汁",3,["柠檬","酸"]],["姜汁",3,["姜"]],["椰浆",4,["椰","甜"]],
  ["桃汁",4,["桃","甜"]],["葡萄汁",4,["葡萄","甜"]],["冰",3,["冰"]],
  ["招牌糖浆",4,["甜","酸"],"稀有"],["安格仕苦精",3,["苦","甜"],"罕见"],
- ["接骨木",4,["甜","柠檬"],"罕见"],["姜味啤酒",3,["姜","气泡"],"罕见"]
+ ["接骨木",4,["甜","柠檬"],"罕见"]
 ].map(f=>({role:"辅料",name:f[0],base:f[1],tags:f[2],rarity:f[3]||"普通",occ:1}));
 const ACCS=[
  ["小雨伞",1.5],["橄榄",1.3],["樱桃",1.4],["柠檬皮",1.3],["糖边",1.5],
@@ -59,13 +60,14 @@ const EFFS=[
  {name:"过牌",eff:"draw",n:2},{name:"续杯",eff:"draw",n:2},
  {name:"甜味检索",eff:"tutor",n:1,tag:"甜"},{name:"酸味检索",eff:"tutor",n:1,tag:"酸"},
  {name:"充分摇晃",eff:"buff",x:0.5},{name:"Mixer",eff:"mixer",choices:["橙汁","蔓越莓"],pen:0.7},
- {name:"点单(改轮盘)",eff:"rot",to:"VOD",turns:3},{name:"对饮(双减)",eff:"dual",delay:2},
+ {name:"点单·金酒",eff:"rot",to:"GIN",turns:1},{name:"点单·威士忌",eff:"rot",to:"WHI",turns:2,rarity:"罕见"},
+ {name:"续单(锁轮盘)",eff:"lock",turns:2,rarity:"罕见"},{name:"对饮(双减)",eff:"dual",delay:2},
  {name:"狂饮(过牌3)",eff:"draw",n:3,rarity:"稀有"},{name:"花式调酒",eff:"buff",x:0.5,rarity:"稀有"}
 ].map(e=>({role:"效果",rarity:e.rarity||"普通",occ:0,...e}));
 const RECIPES=[
  ["螺丝起子","VOD",["橙汁"]],["莫斯科骡子","VOD",["姜","青柠"]],["大都会","VOD",["蔓越莓","青柠"]],
  ["海风","VOD",["蔓越莓","柠檬"]],
- ["莫吉托","RUM",["薄荷","青柠"]],["自由古巴","RUM",["可乐","青柠"]],["黛绮莉","RUM",["青柠","甜"]],
+ ["莫吉托","RUM",["薄荷","青柠"]],["黛绮莉","RUM",["青柠","甜"]],
  ["椰林飘香","RUM",["椰","桃"]],
  ["内格罗尼","GIN",["苦","甜"]],["马天尼","GIN",["葡萄","冰"]],
  ["玛格丽特","TEQ",["青柠","盐"]],["龙舌兰日出","TEQ",["橙汁","蔓越莓"]],
@@ -98,7 +100,9 @@ function describe(c){
   const d={draw:`抽牌：立刻多摸 ${c.n} 张（自动）`,tutor:`检索：找一张带[${c.tag}]味的牌（自动）`,
     buff:`摇晃：下一杯若≥3配料，整杯 +${c.x*100|0}%（手动打出）`,
     mixer:`Mixer：变成 ${(c.choices||[]).join("/")} 之一进杯，但该杯配方×${c.pen}`,
-    rot:`改轮盘：接下来${c.turns}回合基酒变某基酒（自动）`,dual:`对饮：Boss延后${c.delay}回合（自动）`}[c.eff];
+    rot:`点单：接下来 ${c.turns} 回合基酒变【${(SPIRITS.find(s=>s.id===c.to)||{}).name}】（摸到自动生效）`,
+    lock:`续单：接下来 ${c.turns} 回合都是本回合的基酒（手动打出，选好时机）`,
+    dual:`对饮：Boss延后${c.delay}回合（自动）`}[c.eff];
   return `<div class="nm ${rarCls(c)}">✨ ${c.name}${c.rarity!=="普通"?" 〔"+c.rarity+"〕":""}</div><div class="meta">${d}</div>`;
 }
 
@@ -162,7 +166,7 @@ function startTurn(){
     if(c.role==="效果"){
       if(c.eff==="draw"){rest.push(...drawN(c.n));log.push(`过牌+${c.n}`);}
       else if(c.eff==="tutor"){const idx=S.draw.findIndex(x=>x.tags&&x.tags.includes(c.tag));if(idx>=0){rest.push(S.draw.splice(idx,1)[0]);}rest.push(...drawN(c.n-1>0?c.n-1:0));log.push(`检索${c.tag}`);}
-      else if(c.eff==="rot"){for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=c.to;log.push(`改轮盘→${c.turns}回合`);}
+      else if(c.eff==="rot"){for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=c.to;log.push(`点单:下${c.turns}回合→${(SPIRITS.find(s=>s.id===c.to)||{}).name}`);}
       else if(c.eff==="dual"){S.bossDelay+=c.delay;log.push(`Boss延后${c.delay}`);}
       else rest.push(c); // mixer/buff 手动
       S.discard.push(c);
@@ -207,6 +211,10 @@ function playSelected(){
       if(cupOcc()+1>CAP){msg.push(`✗ Mixer：杯占位已满`);continue;}
       const ch=mixerChoice(c);S.cup.push({role:"辅料",occ:1,base:2,tags:[ch],name:"Mixer→"+ch});S.penalty*=c.pen;played.add(i);msg.push(`+Mixer→${ch}(本杯配方×${c.pen})`);
     }else if(c.eff==="buff"){S.buff=c.x;played.add(i);msg.push(`🫨摇晃就绪(下次上酒满3料 +${c.x*100|0}%)`);}
+    else if(c.eff==="lock"){
+      for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=S.spirit.id;
+      played.add(i);msg.push(`📌续单：第${S.turn+1}~${S.turn+c.turns}回合锁定【${S.spirit.name}】`);
+    }
   }
   for(const i of played) S.discard.push(S.hand[i]);
   S.hand=S.hand.filter((_,i)=>!played.has(i));
