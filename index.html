@@ -161,18 +161,19 @@ function beginBattle(){
 function drawN(n){const out=[];for(let k=0;k<n;k++){if(!S.draw.length){if(!S.discard.length)break;S.draw=shuffle(S.discard);S.discard=[];}out.push(S.draw.pop());}return out;}
 function effSpirit(t){const f=S.rotMap[t];if(f)return SPIRITS.find(s=>s.id===f)||SPIRITS[(t-1)%5];return SPIRITS[(t-1)%5];}
 function startTurn(){
-  let hand=drawN(HAND), rest=[], log=[];
-  for(const c of hand){
-    if(c.role==="效果"){
-      if(c.eff==="draw"){rest.push(...drawN(c.n));log.push(`过牌+${c.n}`);}
-      else if(c.eff==="tutor"){const idx=S.draw.findIndex(x=>x.tags&&x.tags.includes(c.tag));if(idx>=0){rest.push(S.draw.splice(idx,1)[0]);}rest.push(...drawN(c.n-1>0?c.n-1:0));log.push(`检索${c.tag}`);}
+  // 队列式处理：被过牌/检索抽出来的效果牌同样会连锁触发
+  let queue=drawN(HAND), rest=[], log=[];
+  while(queue.length){
+    const c=queue.shift();
+    if(c.role==="效果"&&["draw","tutor","rot","dual"].includes(c.eff)){
+      if(c.eff==="draw"){queue.push(...drawN(c.n));log.push(`过牌+${c.n}`);}
+      else if(c.eff==="tutor"){const idx=S.draw.findIndex(x=>x.tags&&x.tags.includes(c.tag));if(idx>=0){queue.push(S.draw.splice(idx,1)[0]);log.push(`检索→拿到${c.tag}`);}else log.push(`检索${c.tag}:牌库没有`);}
       else if(c.eff==="rot"){for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=c.to;log.push(`点单:下${c.turns}回合→${(SPIRITS.find(s=>s.id===c.to)||{}).name}`);}
       else if(c.eff==="dual"){S.bossDelay+=c.delay;log.push(`Boss延后${c.delay}`);}
-      else rest.push(c); // mixer/buff 手动
       S.discard.push(c);
-    } else rest.push(c);
+    } else rest.push(c); // 辅料/配饰/mixer/buff/lock 留在手里
   }
-  S.hand=rest; S.sel=new Set(); S.autolog=log; S.spirit=effSpirit(S.turn); S.feedback=""; S.wheelTip="";
+  S.hand=rest; S.sel=new Set(); S.autolog=log; S.spirit=effSpirit(S.turn); S.feedback=""; S.wheelTip=""; S.served=false;
   render();
 }
 function toggle(i){if(S.sel.has(i))S.sel.delete(i);else S.sel.add(i);render();}
@@ -197,39 +198,46 @@ function mixerChoice(c){
 }
 function playSelected(){
   if(!S.sel.size){S.feedback="（先点选手牌再打出）";render();return;}
-  const msg=[], played=new Set();
+  const msg=[], played=new Set(), toDiscard=[];   // 入杯的牌只属于杯子，上酒时才进弃牌堆
   for(const i of [...S.sel].sort((a,b)=>a-b)){
     const c=S.hand[i];
+    if(S.served&&(c.role==="辅料"||c.role==="配饰"||c.eff==="mixer")){msg.push(`✗ ${c.name}：本回合已上酒，杯子已撤(效果牌仍可打)`);continue;}
     if(c.role==="辅料"){
       const occ=c.occ||1;
       if(cupOcc()+occ>CAP){msg.push(`✗ ${c.name}：杯占位已满(${CAP})`);continue;}
       S.cup.push(c);played.add(i);msg.push(`+${c.name}`);
     }else if(c.role==="配饰"){
-      if(S.cup.some(x=>x.role==="配饰"&&x.name===c.name)){msg.push(`⚠ ${c.name} 重复·无效(同种每杯一次)`);played.add(i);continue;}
+      if(S.cup.some(x=>x.role==="配饰"&&x.name===c.name)){msg.push(`⚠ ${c.name} 重复·无效(同种每杯一次)`);played.add(i);toDiscard.push(c);continue;}
       S.cup.push(c);played.add(i);msg.push(`+${c.name}(装饰×${c.mult}·不占位)`);
     }else if(c.eff==="mixer"){
       if(cupOcc()+1>CAP){msg.push(`✗ Mixer：杯占位已满`);continue;}
-      const ch=mixerChoice(c);S.cup.push({role:"辅料",occ:1,base:2,tags:[ch],name:"Mixer→"+ch});S.penalty*=c.pen;played.add(i);msg.push(`+Mixer→${ch}(本杯配方×${c.pen})`);
-    }else if(c.eff==="buff"){S.buff=c.x;played.add(i);msg.push(`🫨摇晃就绪(下次上酒满3料 +${c.x*100|0}%)`);}
+      const ch=mixerChoice(c);S.cup.push({role:"辅料",occ:1,base:2,tags:[ch],name:"Mixer→"+ch,synth:true});S.penalty*=c.pen;played.add(i);toDiscard.push(c);msg.push(`+Mixer→${ch}(本杯配方×${c.pen})`);
+    }else if(c.eff==="buff"){S.buff=c.x;played.add(i);toDiscard.push(c);msg.push(`🫨摇晃就绪(下次上酒满3料 +${c.x*100|0}%)`);}
     else if(c.eff==="lock"){
       for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=S.spirit.id;
-      played.add(i);msg.push(`📌续单：第${S.turn+1}~${S.turn+c.turns}回合锁定【${S.spirit.name}】`);
+      played.add(i);toDiscard.push(c);msg.push(`📌续单：第${S.turn+1}~${S.turn+c.turns}回合锁定【${S.spirit.name}】`);
     }
   }
-  for(const i of played) S.discard.push(S.hand[i]);
+  for(const c of toDiscard) S.discard.push(c);
   S.hand=S.hand.filter((_,i)=>!played.has(i));
   S.sel=new Set();
   const r=matchedRecipe(S.spirit,S.cup);
-  if(r) msg.push(`★成配方 ${r.id}！`);
+  if(r&&!S.served) msg.push(`★成配方 ${r.id}！`);
   S.feedback=msg.join(" · ")||"（无可打出）";
   render();
 }
 function discardHand(){for(const c of S.hand) S.discard.push(c); S.hand=[];}
 function serveCup(){
+  // 上酒=只结算这杯，不推进回合；结束回合是唯一推进回合的动作
+  if(S.served){S.feedback="本回合已上酒（一回合一杯基酒）——可继续打效果牌，或结束回合";render();return;}
   const r=cupScore(S.spirit,S.cup,S.buff,S.penalty);
   S.serves.push({turn:S.turn,spirit:S.spirit.name,recipe:r.recipe||"-",score:Math.round(r.score)});
-  S.revelry+=r.score; S.feedback=`🍸 上酒 ${Math.round(r.score)}分 ${r.aligned?"(成"+r.recipe+")":"(未成方·小加法)"}`;
-  S.cup=[];S.penalty=1;S.buff=0; discardHand(); endOrNext();
+  S.revelry+=r.score;
+  for(const c of S.cup) if(!c.synth) S.discard.push(c);   // 杯中真实卡此刻才进弃牌堆
+  S.cup=[];S.penalty=1;S.buff=0;S.served=true;
+  if(S.revelry>=S.target){S.phase="result";S.win=S.turn<=(X+S.bossDelay);S.toTurn=S.turn;saveRun();render();return;}
+  S.feedback=`🍸 上酒 ${Math.round(r.score)}分 ${r.aligned?"(成"+r.recipe+")":"(未成方·小加法)"}——回合未结束，可继续打效果牌`;
+  render();
 }
 function endTurn(){ discardHand(); endOrNext(); }
 function endOrNext(){
@@ -295,6 +303,7 @@ function turnStrip(){
   return h;
 }
 function hintLine(){
+  if(S.served) return "💡 已上酒：还可打效果牌（摇晃/续单铺垫下回合），然后结束回合";
   const cupNow=cupScore(S.spirit,S.cup,S.buff,S.penalty);
   const have=new Set([...S.spirit.tags,...S.cup.flatMap(c=>c.tags||[])]);
   const handFl=S.hand.filter(c=>c.role==="辅料");
@@ -373,14 +382,14 @@ function renderBattle(){
     </div>
    </div>
    <div style="margin-top:8px">📖 ${sp.name}配方（×越大越难凑越值钱；✓=已有该味）：</div>${recs}
-   <div style="margin-top:6px">🥃 杯中 <span class="mini">(占位 ${cupOcc()}/${CAP}，含基酒1)</span>：${S.cup.length?S.cup.map(c=>c.name+(c.role==="配饰"?"·装饰":"")).join("、")+` → 上酒得 <b>${Math.round(cupNow.score)}</b>${cupNow.aligned?'(成'+cupNow.recipe+')':'(未成方·小加法)'}`:"空"}${S.buff?' <span class="pill">🫨摇晃待发</span>':""}</div>
+   <div style="margin-top:6px">🥃 杯中 <span class="mini">(占位 ${cupOcc()}/${CAP}，含基酒1)</span>：${S.cup.length?S.cup.map(c=>c.name+(c.role==="配饰"?"·装饰":"")).join("、")+` → 上酒得 <b>${Math.round(cupNow.score)}</b>${cupNow.aligned?'(成'+cupNow.recipe+')':'(未成方·小加法)'}`:(S.served?"已上酒·本回合无杯":"空")}${S.buff?' <span class="pill">🫨摇晃待发</span>':""}</div>
    <div class="mini" style="margin-top:5px;color:var(--lime)">${hintLine()}</div>
   </div>
   <div class="sub">✋ 手牌（点选 → 打出入杯）：</div>
   ${S.hand.length?S.hand.map((c,i)=>`<div class="card ${S.sel.has(i)?'sel':''}" onclick="toggle(${i})">${describe(c)}</div>`).join(""):'<div class="mini">手牌已空</div>'}
   <button class="btn" onclick="playSelected()">▶ 打出选中入杯</button>
-  <button class="btn lime" onclick="serveCup()">🍸 上酒结算 +${Math.round(cupNow.score)}分（清杯）</button>
-  <button class="btn alt" onclick="endTurn()">结束回合（留杯到下回合攒）</button>`;
+  ${S.served?'<button class="btn alt" style="opacity:.55">🍸 本回合已上酒</button>':`<button class="btn lime" onclick="serveCup()">🍸 上酒结算 +${Math.round(cupNow.score)}分（回合不结束）</button>`}
+  <button class="btn alt" onclick="endTurn()">⏭ 结束回合${S.served?"":"（留杯到下回合攒）"}</button>`;
 }
 function draftExtra(c){
   if(c.role!=="辅料") return "";
