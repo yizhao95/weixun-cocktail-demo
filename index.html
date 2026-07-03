@@ -46,10 +46,10 @@ const SPIRITS=[
 // 气泡系(汤力水/可乐/苏打/姜味啤酒)已移出→留给气泡水(Highball)流派
 const FLAVORS=[
  ["橙汁",4,["橙汁","酸"]],["薄荷",2,["薄荷"]],["青柠",2,["青柠","酸"]],
- ["盐",1,["盐"]],["糖浆",5,["甜"]],["苦精",2,["苦"]],
+ ["盐",1,["盐"]],["糖浆",5,["甜","糖浆"]],["苦精",2,["苦","苦精"]],
  ["蔓越莓汁",3,["蔓越莓","酸"]],["柠檬汁",3,["柠檬","酸"]],["姜汁",3,["姜"]],["椰浆",4,["椰","甜"]],
  ["桃汁",4,["桃","甜"]],["葡萄汁",4,["葡萄","甜"]],["冰",3,["冰"]],
- ["招牌糖浆",4,["甜","酸"],"稀有"],["安格仕苦精",3,["苦","甜"],"罕见"],
+ ["招牌糖浆",4,["甜","酸","糖浆"],"稀有"],["安格仕苦精",3,["苦","甜","苦精"],"罕见"],
  ["接骨木",4,["甜","柠檬"],"罕见"]
 ].map(f=>({role:"辅料",name:f[0],base:f[1],tags:f[2],rarity:f[3]||"普通",occ:1}));
 const ACCS=[
@@ -67,12 +67,13 @@ const EFFS=[
 const RECIPES=[
  ["螺丝起子","VOD",["橙汁"]],["莫斯科骡子","VOD",["姜","青柠"]],["大都会","VOD",["蔓越莓","青柠"]],
  ["海风","VOD",["蔓越莓","柠檬"]],
- ["莫吉托","RUM",["薄荷","青柠"]],["黛绮莉","RUM",["青柠","甜"]],
+ ["莫吉托","RUM",["薄荷","青柠"]],["黛绮莉","RUM",["青柠","糖浆"]],
  ["椰林飘香","RUM",["椰","桃"]],
  ["内格罗尼","GIN",["苦","甜"]],["马天尼","GIN",["葡萄","冰"]],
  ["玛格丽特","TEQ",["青柠","盐"]],["龙舌兰日出","TEQ",["橙汁","蔓越莓"]],
- ["古典","WHI",["苦","甜","冰"]]
+ ["古典","WHI",["苦精","甜","冰"]]
 ].map(r=>({id:r[0],spirit:r[1],req:r[2]}));
+const GENERIC=new Set(["酸","甜","苦","柠檬"]);   // 任意味型需求；其余tag=指定原料需求
 const RAR_W={"普通":60,"罕见":30,"稀有":10};
 const LADDER={1:450,2:540,3:680,4:900,5:1100,6:1350};
 const BASE_SCALE=0.3, R=18, X=14, HAND=5;
@@ -173,7 +174,7 @@ function startTurn(){
       S.discard.push(c);
     } else rest.push(c); // 辅料/配饰/mixer/buff/lock 留在手里
   }
-  S.hand=rest; S.sel=new Set(); S.autolog=log; S.spirit=effSpirit(S.turn); S.feedback=""; S.wheelTip=""; S.served=false;
+  S.hand=rest; S.sel=new Set(); S.autolog=log; S.spirit=effSpirit(S.turn); S.feedback=""; S.wheelSel=null; S.served=false;
   render();
 }
 function toggle(i){if(S.sel.has(i))S.sel.delete(i);else S.sel.add(i);render();}
@@ -290,11 +291,22 @@ function wheelSVG(){
    <circle cx="60" cy="68" r="11" fill="#241d33" stroke="var(--gold)" stroke-width="2"/>
   </svg>`;
 }
-function wheelInfo(id){
-  const sp=SPIRITS.find(s=>s.id===id);
-  const ts=[]; for(let t=S.turn;t<=X;t++) if(effSpirit(t).id===id) ts.push(t);
-  const tip=`${sp.name}：${ts.length?`第 ${ts.join("、")} 回合轮到`+(ts[0]===S.turn?"（就是本回合）":""):"本局剩余回合不再轮到"}`;
-  S.wheelTip=(S.wheelTip===tip)?"":tip; render();
+function wheelInfo(id){ S.wheelSel=(S.wheelSel===id)?null:id; render(); }
+function turnsFor(id){const ts=[];for(let t=S.turn;t<=X;t++)if(effSpirit(t).id===id)ts.push(t);return ts;}
+function reqLabel(t){return GENERIC.has(t)?"任意"+t:t;}
+function cupTags(){return new Set([...S.spirit.tags,...S.cup.flatMap(c=>c.tags||[])]);}
+function reqMark(t,forCurrent){                    // 该需求现在哪：杯/手/组/缺
+  if(forCurrent&&cupTags().has(t))return["杯","done"];
+  if(S.hand.some(c=>(c.tags||[]).includes(t)))return["手","ok"];
+  if(S.draw.concat(S.discard).some(c=>(c.tags||[]).includes(t)))return["组",""];
+  return["缺","no"];
+}
+function spiritRecipesHTML(sp,forCurrent){
+  return RECIPES.filter(r=>r.spirit===sp.id).map(r=>{
+    const done=forCurrent&&r.req.every(t=>cupTags().has(t));
+    const marks=r.req.map(t=>{const[m,cls]=reqMark(t,forCurrent);return `<span class="${cls}">${reqLabel(t)}·${m}</span>`;}).join("　");
+    return `<div class="recipe">${done?'<span class="done">★成! </span>':''}${r.id}<span class="mini">×${DIFF_MULT[r.req.length]}</span>：${marks}</div>`;
+  }).join("")||'<div class="recipe mini">（该基酒暂无配方）</div>';
 }
 function turnStrip(){
   let h="";
@@ -346,7 +358,7 @@ function renderSetup(){
    <div style="margin-top:10px">种子 <input id="seed" type="number" value="${Math.floor(Math.random()*9999)}" style="width:100px"></div>
    <button class="btn" onclick="start(+diff.value,+seed.value)">开始</button>
   </div>
-  <div class="mini">计分：成『配方』→整杯×乘区，配方越难凑越值钱（1味×4 / 2味×12 / 3味×24，配方里每用1张罕见/稀有料再+80%）；没成→只有基酒+辅料小加法。配饰=额外乘区。</div>`;
+  <div class="mini">计分：成『配方』→整杯×乘区，配方越难凑越值钱（1味×4 / 2味×12 / 3味×24，配方里每用1张罕见/稀有料再+80%）；没成→只有基酒+辅料小加法。配饰=额外乘区。配方需求分两档：「任意甜/酸/苦」=该味型任何原料，其余（青柠/糖浆/苦精…）必须指定原料。</div>`;
 }
 function renderDraft(){
   const o=S.offer, dr=deckRecipes();
@@ -360,10 +372,9 @@ function renderDraft(){
 }
 function renderBattle(){
   const sp=S.spirit;
-  const have=new Set([...sp.tags,...S.cup.flatMap(c=>c.tags||[])]);
-  const recs=RECIPES.filter(r=>r.spirit===sp.id).map(r=>{
-    const done=r.req.every(t=>have.has(t));
-    return `<div class="recipe">${done?'<span class="done">★成! </span>':''}${r.id}<span class="mini">×${DIFF_MULT[r.req.length]}</span>：${r.req.map(t=>have.has(t)?'<span class="ok">✓'+t+'</span>':'<span class="no">✗'+t+'</span>').join(" ")}</div>`;}).join("");
+  const recs=spiritRecipesHTML(sp,true);
+  const wsp=S.wheelSel?SPIRITS.find(s=>s.id===S.wheelSel):null;
+  const wts=wsp?turnsFor(wsp.id):[];
   const cupNow=cupScore(sp,S.cup,S.buff,S.penalty);
   const pct=Math.min(100,S.revelry/S.target*100);
   const remain=X+S.bossDelay-S.turn+1, need=Math.max(0,S.target-S.revelry);
@@ -378,10 +389,12 @@ function renderBattle(){
      <div>🎡 本杯基酒 <b style="color:${SP_COLOR[sp.id]};font-size:17px">${sp.name}</b>(${sp.base})</div>
      <div class="mini" style="margin-top:4px">之后回合次序：</div>
      <div>${turnStrip()}</div>
-     ${S.wheelTip?`<div class="mini" style="color:var(--gold);margin-top:3px">${S.wheelTip}</div>`:'<div class="mini" style="margin-top:3px">👆 点轮盘扇区，看该酒轮到的回合</div>'}
+     <div class="mini" style="margin-top:3px">👆 点轮盘扇区：查任意基酒的配方 & 轮到回合</div>
     </div>
    </div>
-   <div style="margin-top:8px">📖 ${sp.name}配方（×越大越难凑越值钱；✓=已有该味）：</div>${recs}
+   ${wsp&&wsp.id!==sp.id?`<div style="margin-top:6px;border:1px dashed ${SP_COLOR[wsp.id]};border-radius:8px;padding:6px 8px">🔭 <b style="color:${SP_COLOR[wsp.id]}">${wsp.name}</b> <span class="mini">${wts.length?"第 "+wts.join("、")+" 回合轮到":"剩余回合不再轮到"}</span> 的配方：${spiritRecipesHTML(wsp,false)}</div>`:(wsp?`<div class="mini" style="color:var(--gold);margin-top:4px">📍${wsp.name}就是本回合基酒，配方见下方${turnsFor(wsp.id).length>1?"（之后还在第 "+turnsFor(wsp.id).slice(1).join("、")+" 回合轮到）":""}</div>`:"")}
+   <div style="margin-top:8px">📖 ${sp.name}配方（×越大越难凑越值钱）：</div>${recs}
+   <div class="mini">标记：<span class="done">杯</span>=已入杯(含基酒自带)　<span class="ok">手</span>=在手牌　组=在牌组未到手　<span class="no">缺</span>=牌组没有　「任意X」=该味型任何原料都行，其余必须指定原料</div>
    <div style="margin-top:6px">🥃 杯中 <span class="mini">(占位 ${cupOcc()}/${CAP}，含基酒1)</span>：${S.cup.length?S.cup.map(c=>c.name+(c.role==="配饰"?"·装饰":"")).join("、")+` → 上酒得 <b>${Math.round(cupNow.score)}</b>${cupNow.aligned?'(成'+cupNow.recipe+')':'(未成方·小加法)'}`:(S.served?"已上酒·本回合无杯":"空")}${S.buff?' <span class="pill">🫨摇晃待发</span>':""}</div>
    <div class="mini" style="margin-top:5px;color:var(--lime)">${hintLine()}</div>
   </div>
@@ -399,7 +412,7 @@ function draftExtra(c){
     const cnt=t=>S.deck.filter(x=>(x.tags||[]).includes(t)).length;
     const filled=r.req.filter(t=>cnt(t)>0).length;
     const willDo=c.tags.some(t=>r.req.includes(t)&&cnt(t)===0)&&filled===r.req.length-1;
-    const det=r.req.map(t=>{const n=cnt(t);return n>0?'<span class="ok">✓'+t+(n>1?"×"+n:"")+'</span>':'<span class="no">✗'+t+'</span>';}).join(" ");
+    const det=r.req.map(t=>{const n=cnt(t);return n>0?'<span class="ok">✓'+reqLabel(t)+(n>1?"×"+n:"")+'</span>':'<span class="no">✗'+reqLabel(t)+'</span>';}).join(" ");
     return `${r.id}<span class="mini">×${DIFF_MULT[r.req.length]}</span> <b>${filled}/${r.req.length}</b>${willDo?' <span class="done">→选它可成!</span>':''} ${det}`;
   }).join("<br>")+'</div>';
 }
