@@ -49,7 +49,7 @@ const FLAVORS=[
  ["盐",1,["盐"]],["糖浆",5,["甜","糖浆"]],["苦精",2,["苦","苦精"]],
  ["蔓越莓汁",3,["蔓越莓","酸"]],["柠檬汁",3,["柠檬","酸"]],["姜汁",3,["姜"]],["椰浆",4,["椰","甜"]],
  ["桃汁",4,["桃","甜"]],["葡萄汁",4,["葡萄","甜"]],["冰",3,["冰"]],
- ["招牌糖浆",4,["甜","酸","糖浆"],"稀有"],["安格仕苦精",3,["苦","甜","苦精"],"罕见"],
+ ["招牌糖浆",4,["甜","酸","糖浆"],"稀有"],["安格仕苦精",3,["苦","苦精"],"罕见"],
  ["接骨木",4,["甜","柠檬"],"罕见"]
 ].map(f=>({role:"辅料",name:f[0],base:f[1],tags:f[2],rarity:f[3]||"普通",occ:1}));
 const COPY1=new Set(["橙汁","青柠","柠檬汁","蔓越莓汁"]);   // 基础果汁: 回合内首次使用→+1张临时复制
@@ -349,6 +349,13 @@ function hintLine(){
   if(cupNow.aligned) return `💡 已成 ${cupNow.recipe}——现在上酒得 ${Math.round(cupNow.score)} 分；也可再加料/装饰抬分后再上`;
   return "💡 本杯手牌凑不成配方：可上酒拿小加法，或结束回合留杯等好料";
 }
+function rotPreview(c){   // 点单/续单: 打出前预览未来基酒会变成什么
+  if(S.phase!=="battle"||(c.eff!=="rot"&&c.eff!=="lock"))return "";
+  const to=c.eff==="lock"?S.spirit:SPIRITS.find(s=>s.id===c.to);
+  const rows=[];
+  for(let t=S.turn+1;t<=Math.min(S.turn+c.turns,X);t++)rows.push(`第${t}回合 ${effSpirit(t).name}→<b style="color:${SP_COLOR[to.id]}">${to.name}</b>`);
+  return rows.length?`<div class="meta" style="color:var(--gold)">🔮 现在打出：${rows.join("，")}</div>`:"";
+}
 function deckRecipes(){
   const tags=new Set(S.deck.flatMap(c=>c.tags||[]));
   return RECIPES.filter(r=>r.req.every(t=>tags.has(t)));
@@ -412,7 +419,7 @@ function renderBattle(){
    <div class="mini" style="margin-top:5px;color:var(--lime)">${hintLine()}</div>
   </div>
   <div class="sub">✋ 手牌（点选 → 打出入杯）：</div>
-  ${S.hand.length?S.hand.map((c,i)=>`<div class="card ${S.sel.has(i)?'sel':''}" onclick="toggle(${i})">${describe(c)}${c.temp?'<div class="meta" style="color:var(--gold)">⏳临时复制·回合结束消失</div>':''}</div>`).join(""):'<div class="mini">手牌已空</div>'}
+  ${S.hand.length?S.hand.map((c,i)=>`<div class="card ${S.sel.has(i)?'sel':''}" onclick="toggle(${i})">${describe(c)}${c.temp?'<div class="meta" style="color:var(--gold)">⏳临时复制·回合结束消失</div>':''}${rotPreview(c)}</div>`).join(""):'<div class="mini">手牌已空</div>'}
   <button class="btn" onclick="playSelected()">▶ 打出选中入杯</button>
   <button class="btn lime" onclick="serveCup()">🍸 上酒结算 +${Math.round(cupNow.score)}分（本回合可多次上酒）</button>
   <button class="btn alt" onclick="endTurn()">⏭ 结束回合（不上酒则留杯）</button>`;
