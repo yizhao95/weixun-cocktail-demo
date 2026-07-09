@@ -273,6 +273,8 @@ function playSelected(){
 function discardHand(){for(const c of S.hand) if(!c.temp) S.discard.push(c); S.hand=[];}  // 临时牌消失不进弃牌堆
 function serveCup(){
   // 上酒=结算这杯并清杯，回合不推进；同一回合可反复攒杯再上(基酒都是本回合的)
+  // 空杯禁上: 否则"无限空杯serve+回头客"可无限刷分(LLM对局实测漏洞 2026-07-07)
+  if(!S.cup.some(c=>c.role==="辅料")){S.feedback=T("✗ 空杯不能上酒（杯里至少要有1份辅料）","✗ Can't serve an empty cup (needs ≥1 ingredient)");render();return;}
   const r=cupScore(S.spirit,S.cup,S.buff,S.penalty);
   S.serves.push({turn:S.turn,spirit:S.spirit.name,recipe:r.recipe||"-",score:Math.round(r.score)});
   S.revelry+=r.score;
