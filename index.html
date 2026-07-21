@@ -134,7 +134,7 @@ function describe(c){
     mixer:T(`Mixer：变成 ${(c.choices||[]).join("/")} 之一进杯，但该杯配方×${c.pen}`,`Mixer: becomes one of ${(c.choices||[]).map(Ntag).join("/")}, but recipe ×${c.pen} this cup`),
     rot:T(`点单：接下来 ${c.turns} 回合基酒变【${(SPIRITS.find(s=>s.id===c.to)||{}).name}】（手动打出，选好时机）`,`Order: next ${c.turns} turn(s) become ${N((SPIRITS.find(s=>s.id===c.to)||{}).name)} (play manually, timing matters)`),
     lock:T(`续单：接下来 ${c.turns} 回合都是本回合的基酒（手动打出，选好时机）`,`Encore: next ${c.turns} turns repeat THIS turn's spirit (play manually)`),
-    regular:T(`全局：整局生效——每种基酒每上过1杯，该基酒之后的基础分+${c.k}（线性成长，可叠加）`,`Global: each spirit gains +${c.k} base per cup you've served of it (linear, stacks)`),
+    regular:T(`全局：每种基酒每做成1杯【配方酒】，该基酒之后基础分+${c.k}（线性，可与另一张叠加；打出后本局移除）`,`Global: each spirit gains +${c.k} base per RECIPE cup served of it (linear; stacks with the other copy; removed from run when played)`),
     dual:T(`对饮：Boss延后${c.delay}回合（自动）`,`Toast: Boss delayed ${c.delay} turns (auto)`)}[c.eff];
   return `<div class="nm ${rarCls(c)}">✨ ${N(c.name)}${rar}</div><div class="meta">${d}</div>`;
 }
@@ -197,16 +197,18 @@ function drawN(n){const out=[];for(let k=0;k<n;k++){if(!S.draw.length){if(!S.dis
 function effSpirit(t){const f=S.rotMap[t];if(f)return SPIRITS.find(s=>s.id===f)||SPIRITS[(t-1)%5];return SPIRITS[(t-1)%5];}
 function startTurn(){
   // 队列式处理：被过牌/检索抽出来的效果牌同样会连锁触发
-  let queue=drawN(HAND), rest=[], log=[];
+  // 已触发的效果卡先押暂存区、连锁结束才进弃牌堆——否则洗牌会把它们抽回来无限循环(2026-07-21修复)
+  let queue=drawN(HAND), rest=[], log=[], usedFx=[];
   while(queue.length){
     const c=queue.shift();
     if(c.role==="效果"&&["draw","tutor","dual"].includes(c.eff)){
       if(c.eff==="draw"){queue.push(...drawN(c.n));log.push(T(`过牌+${c.n}`,`Draw +${c.n}`));}
       else if(c.eff==="tutor"){const idx=S.draw.findIndex(x=>x.tags&&x.tags.includes(c.tag));if(idx>=0){queue.push(S.draw.splice(idx,1)[0]);log.push(T(`检索→拿到${c.tag}`,`Tutor→got ${Ntag(c.tag)}`));}else log.push(T(`检索${c.tag}:牌库没有`,`Tutor ${Ntag(c.tag)}: none in deck`));}
       else if(c.eff==="dual"){S.bossDelay+=c.delay;log.push(T(`Boss延后${c.delay}`,`Boss delayed ${c.delay}`));}
-      S.discard.push(c);
+      usedFx.push(c);
     } else rest.push(c); // 辅料/配饰/mixer/buff/rot/lock 留在手里(改轮盘类一律手动)
   }
+  S.discard.push(...usedFx);
   S.hand=rest; S.sel=new Set(); S.autolog=log; S.spirit=effSpirit(S.turn); S.feedback=""; S.wheelSel=null; S.copied={};
   render();
 }
@@ -258,8 +260,9 @@ function playSelected(){
       for(let t=S.turn+1;t<=S.turn+c.turns;t++)S.rotMap[t]=c.to;
       played.add(i);toDiscard.push(c);msg.push(T(`📌点单：第${S.turn+1}${c.turns>1?"~"+(S.turn+c.turns):""}回合变【${to}】`,`📌 Order: turn ${S.turn+1}${c.turns>1?"–"+(S.turn+c.turns):""} becomes ${N(to)}`));
     }else if(c.eff==="regular"){
+      // 全局卡打出后本局移除(exile, 不进弃牌堆)——防单卡洗牌循环复叠(2026-07-21拍板)
       S.regularK=(S.regularK||0)+c.k;
-      played.add(i);toDiscard.push(c);msg.push(T(`🔁全局生效：每种基酒每上过1杯→之后基础分+${c.k}（当前累计+${S.regularK}/杯）`,`🔁 Global: each spirit gains +${c.k} base per cup served of it (now +${S.regularK}/cup)`));
+      played.add(i);msg.push(T(`🔁全局生效(本局移除)：每种基酒每做成1杯配方酒→之后基础分+${c.k}（当前累计+${S.regularK}/杯）`,`🔁 Global (removed from this run): each spirit gains +${c.k} base per RECIPE cup served of it (now +${S.regularK}/cup)`));
     }
   }
   for(const c of toDiscard) S.discard.push(c);
@@ -278,7 +281,7 @@ function serveCup(){
   const r=cupScore(S.spirit,S.cup,S.buff,S.penalty);
   S.serves.push({turn:S.turn,spirit:S.spirit.name,recipe:r.recipe||"-",score:Math.round(r.score)});
   S.revelry+=r.score;
-  S.spiritServes[S.spirit.id]=(S.spiritServes[S.spirit.id]||0)+1;   // 回头客计数(本杯之后生效)
+  if(r.aligned)S.spiritServes[S.spirit.id]=(S.spiritServes[S.spirit.id]||0)+1;   // 回头客只计成方杯(散杯刷计数漏洞修复 2026-07-21)
   S.cup=[];S.penalty=1;S.buff=0;                                    // 杯中全是镜像，直接清空
   if(S.revelry>=S.target){S.phase="result";S.win=S.turn<=(X+S.bossDelay);S.toTurn=S.turn;saveRun();render();return;}
   S.feedback=T(`🍸 上酒 ${Math.round(r.score)}分 ${r.aligned?"(成"+r.recipe+")":"(未成方·小加法)"}——本回合还可继续攒杯再上（基酒仍是${S.spirit.name}）`,
